@@ -33,7 +33,7 @@ import {
 import {EditableApiDefinition} from "../../../../models/api.model";
 import {ApisService, IApiEditingSession} from "../../../../services/apis.service";
 import {AbstractPageComponent} from "../../../../components/page-base.component";
-import {DefaultSeverityRegistry, IValidationSeverityRegistry, OtCommand} from "apicurio-data-models";
+import {DefaultSeverityRegistry, IValidationSeverityRegistry, Library, OtCommand} from "apicurio-data-models";
 import {EditorDisconnectedDialogComponent} from "./_components/dialogs/editor-disconnected.component";
 import {VersionedAck} from "../../../../models/ack.model";
 import {ApiEditorUser} from "../../../../models/editor-user.model";
@@ -46,6 +46,11 @@ import {StorageError} from "../../../../models/storageError.model";
 import * as moment from "moment";
 import {DeferredAction} from "../../../../models/deferred.model";
 import {AbstractApiEditorComponent} from "./editor.base";
+import {ComponentType} from "./_models/component-type.model";
+import {ImportedComponent} from "./_models/imported-component.model";
+import {ImportComponentsWizard} from "../_components/import-components.wizard";
+import {HttpClient, HttpResponse} from "@angular/common/http";
+import {HttpUtils} from "../../../../util/common";
 
 
 enum PendingActionType {
@@ -182,6 +187,7 @@ export class ApiEditorPageComponent extends AbstractPageComponent implements Aft
 
     @ViewChildren("apiEditor") _apiEditor: QueryList<AbstractApiEditorComponent>;
     @ViewChild("editorDisconnectedModal") editorDisconnectedModal: EditorDisconnectedDialogComponent;
+    @ViewChild("importComponentsWizard") importComponentsWizard: ImportComponentsWizard;
     private editorAvailable: boolean;
 
     private editingSession: IApiEditingSession;
@@ -200,6 +206,8 @@ export class ApiEditorPageComponent extends AbstractPageComponent implements Aft
     retryTimerDate: Date;
     reconnecting: boolean = false;
     isOffline: boolean;
+    httpFetchEnabled: boolean = true; // TODO should be configurable - true in PROD mode and false in DEV mode (see usage below)
+    uiUrl: string = "";
 
     private currentEditorSelection: string;
 
@@ -212,18 +220,23 @@ export class ApiEditorPageComponent extends AbstractPageComponent implements Aft
      * @param router
      * @param route
      * @param zone
+     * @param http
      * @param apis
      * @param titleService
      * @param validationService
      * @param config
      */
-    constructor(private router: Router, route: ActivatedRoute, private zone: NgZone,
+    constructor(private router: Router, route: ActivatedRoute, private zone: NgZone, protected http: HttpClient,
                 private apis: ApisService, titleService: Title, private validationService: ValidationService,
                 private config: ConfigService) {
         super(route, titleService);
         this.apiDefinition = new EditableApiDefinition();
         this.editorFeatures = new ApiEditorComponentFeatures();
         this.editorFeatures.validationSettings = true;
+        this.editorFeatures.componentImports = true;
+        if (this.config.uiUrl()) {
+            this.uiUrl = this.config.uiUrl();
+        }
     }
 
     /**
@@ -251,6 +264,46 @@ export class ApiEditorPageComponent extends AbstractPageComponent implements Aft
         this.apiDefinition.id = apiId;
 
         this.openEditingSession(apiId, false);
+    }
+
+    /**
+     * Called to import one or more components of the given type.
+     * @param componentType
+     */
+    public importComponents = (componentType: ComponentType) : Promise<ImportedComponent[]> => {
+        return this.importComponentsWizard.open(componentType);
+    }
+
+    /**
+     * Fetches external content on behalf of the editor.  This implementation should handle both
+     * external http(s) content as well as internal Apicurio Studio content.
+     * @param externalRef
+     */
+    public fetchExternalContent = (externalRef: string): Promise<any> => {
+        console.info("[ApiEditorPageComponent] Fetching content from: ", externalRef);
+        if (externalRef.startsWith("apicurio:")) {
+            let designId: string = externalRef.substring(externalRef.indexOf(":") + 1);
+            return this.apis.getApiDefinition(designId).then( apiDef => {
+                return apiDef.spec;
+            });
+        } else if (externalRef.toLowerCase().startsWith("http") && this.httpFetchEnabled) {
+            try {
+                let fetchUrl: string = `${ this.uiUrl }fetch?url=${ encodeURI(externalRef) }`;
+                console.debug("[ApiEditorPageComponent] Fetch URL: ", fetchUrl);
+                let options: any = {
+                    observe: "response"
+                };
+                return HttpUtils.mappedPromise<any>(
+                    this.http.get<HttpResponse<any>>(fetchUrl, options).toPromise(),
+                    (response) => {
+                        return response.body; }
+                );
+            } catch (e) {
+                console.error("[ApiCatalogService] Error fetching external http(s) API/content.");
+                console.error(e);
+            }
+        }
+        return Promise.resolve(null);
     }
 
     /**

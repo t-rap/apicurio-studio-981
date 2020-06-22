@@ -1,4 +1,4 @@
-[![CircleCI](https://circleci.com/gh/Apicurio/apicurio-studio.svg?style=svg)](https://circleci.com/gh/Apicurio/apicurio-studio)
+![Verify Build Workflow](https://github.com/Apicurio/apicurio-studio/workflows/Verify%20Build%20Workflow/badge.svg)
 
 # The apicurio-studio project (Open Source API Design Studio)
 
@@ -53,6 +53,10 @@ This will start Wildfly on your local machine and you can access the UI at [http
 ## Contribute fixes and features
 
 Apicurio Studio is open source, and we welcome anybody who wants to participate and contribute!
+
+Please follow [Setting your development environment](https://apicurio-studio.readme.io/docs/setting-up-a-development-environment) guide to setup your local machine for development.  The guide assumes the use of the Eclipse IDE for Java
+development (backend) but is not required - developers should be able to adapt the instructions to their particular
+environment.
 
 If you want to fix a bug or make any changes, please [log an issue in GitHub](https://github.com/apicurio/apicurio-studio/issues) describing the bug
 or new feature. Then we highly recommend making the changes on a topic branch named with the JIRA issue number. For example, this command creates

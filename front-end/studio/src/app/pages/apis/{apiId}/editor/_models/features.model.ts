@@ -17,4 +17,5 @@
 
 export class ApiEditorComponentFeatures {
     validationSettings: boolean = false;
+    componentImports: boolean = false;
 }

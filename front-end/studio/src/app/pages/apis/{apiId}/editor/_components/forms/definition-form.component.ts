@@ -29,14 +29,12 @@ import {
     ICommand,
     Library,
     Oas20Document,
-    Oas20Schema,
     Oas20SchemaDefinition,
     Oas30Document,
-    Oas30Schema,
     Oas30SchemaDefinition,
     OasDocument,
-    OasSchema,
-    SimplifiedPropertyType,
+    OasSchema, ReferenceUtil,
+    SimplifiedType,
     TraverserDirection,
     VisitorUtil,
 } from "apicurio-data-models";
@@ -46,13 +44,21 @@ import {CloneDefinitionDialogComponent} from "../dialogs/clone-definition.compon
 import {SelectionService} from "../../_services/selection.service";
 import {CommandService} from "../../_services/command.service";
 import {DocumentService} from "../../_services/document.service";
-import {IPropertyEditorHandler, PropertyData, PropertyEditorComponent} from "../editors/property-editor.component";
 import {EditorsService} from "../../_services/editors.service";
-import {ModelUtils} from "../../_util/model.util";
 import {RenameEntityDialogComponent, RenameEntityEvent} from "../dialogs/rename-entity.component";
-import Oas20PropertySchema = Oas20Schema.Oas20PropertySchema;
-import Oas30PropertySchema = Oas30Schema.Oas30PropertySchema;
-import { AbstractBaseComponent } from "../common/base-component";
+import {DropDownOption, DropDownOptionValue as Value} from "../../../../../../components/common/drop-down.component";
+import {ApiCatalogService} from "../../_services/api-catalog.service";
+
+const INHERITANCE_TYPES: DropDownOption[] = [
+    new Value("No inheritance", "none"),
+    new Value("AnyOf", "anyOf"),
+    new Value("AllOf", "allOf"),
+    new Value("OneOf", "oneOf")
+];
+const INHERITANCE_TYPES_20: DropDownOption[] = [
+    new Value("No inheritance", "none"),
+    new Value("AllOf", "allOf")
+];
 
 
 @Component({
@@ -64,11 +70,14 @@ import { AbstractBaseComponent } from "../common/base-component";
 })
 export class DefinitionFormComponent extends SourceFormComponent<OasSchema> {
 
+    private _stype: SimplifiedType = null;
+
     private _definition: Oas20SchemaDefinition | Oas30SchemaDefinition;
     @Input()
     set definition(definition: Oas20SchemaDefinition | Oas30SchemaDefinition) {
         this._definition = definition;
         this.sourceNode = definition;
+        this._stype = null;
         this.revertSource();
     }
 
@@ -78,7 +87,6 @@ export class DefinitionFormComponent extends SourceFormComponent<OasSchema> {
 
     @ViewChild("cloneDefinitionDialog") cloneDefinitionDialog: CloneDefinitionDialogComponent;
     @ViewChild("renameDefinitionDialog") renameDefinitionDialog: RenameEntityDialogComponent;
-    @ViewChild("renamePropertyDialog") renamePropertyDialog: RenameEntityDialogComponent;
 
     /**
      * C'tor.
@@ -87,17 +95,23 @@ export class DefinitionFormComponent extends SourceFormComponent<OasSchema> {
      * @param commandService
      * @param documentService
      * @param editors
+     * @param catalog
      */
     public constructor(protected changeDetectorRef: ChangeDetectorRef,
                        protected selectionService: SelectionService,
                        protected commandService: CommandService,
                        protected documentService: DocumentService,
-                       private editors: EditorsService) {
+                       private editors: EditorsService,
+                       private catalog: ApiCatalogService) {
         super(changeDetectorRef, selectionService, commandService, documentService);
     }
 
     public definitionName(): string {
         return this._definitionName(this.definition);
+    }
+
+    isImported(): boolean {
+        return this.definition.$ref && !this.definition.$ref.startsWith("#");
     }
 
     protected createEmptyNodeForSource(): Oas20SchemaDefinition | Oas30SchemaDefinition {
@@ -110,64 +124,6 @@ export class DefinitionFormComponent extends SourceFormComponent<OasSchema> {
 
     protected createReplaceNodeCommand(node: Oas20SchemaDefinition | Oas30SchemaDefinition): ICommand {
         return CommandFactory.createReplaceSchemaDefinitionCommand(this.definition.ownerDocument().getDocumentType(), this.definition, node);
-    }
-
-    public openAddSchemaPropertyEditor(): void {
-        let editor: PropertyEditorComponent = this.editors.getPropertyEditor();
-        let handler: IPropertyEditorHandler = {
-            onSave: (event) => {
-                this.addSchemaProperty(event.data);
-            },
-            onCancel: () => {}
-        };
-        editor.open(handler, this.definition);
-    }
-
-    public hasProperties(): boolean {
-        return this.properties().length > 0;
-    }
-
-    public properties(): OasSchema[] {
-        let rval: OasSchema[] = [];
-        this.definition.getPropertyNames().sort((left, right) => {
-            return left.localeCompare(right);
-        }).forEach(name => rval.push(this.definition.getProperty(name)));
-
-        return rval;
-    }
-
-    public propertiesNodePath(): string {
-        return ModelUtils.nodeToPath(this.definition) + "/properties";
-    }
-
-    public changePropertyDescription(property: OasSchema, newDescription: string): void {
-        let command: ICommand = CommandFactory.createChangePropertyCommand<string>(property, "description", newDescription);
-        this.commandService.emit(command);
-    }
-
-    public changePropertyType(property: OasSchema, newType: SimplifiedPropertyType): void {
-        let command: ICommand = CommandFactory.createChangePropertyTypeCommand(property as any, newType);
-        this.commandService.emit(command);
-    }
-
-    public deleteProperty(property: OasSchema): void {
-        let command: ICommand = CommandFactory.createDeletePropertyCommand(property as any);
-        this.commandService.emit(command);
-    }
-
-    public addSchemaProperty(data: PropertyData): void {
-        let command: ICommand = CommandFactory.createNewSchemaPropertyCommand(this.definition,
-            data.name, data.description, data.type);
-        this.commandService.emit(command);
-        let path = Library.createNodePath(this.definition);
-        path.appendSegment("properties", false);
-        path.appendSegment(data.name, true);
-        this.__selectionService.select(path.toString());
-    }
-
-    public deleteAllSchemaProperties(): void {
-        let command: ICommand = CommandFactory.createDeleteAllPropertiesCommand(this.definition);
-        this.commandService.emit(command);
     }
 
     public delete(): void {
@@ -227,28 +183,99 @@ export class DefinitionFormComponent extends SourceFormComponent<OasSchema> {
         return schemaDef.getName();
     }
 
-    /**
-     * Opens the rename property dialog.
-     * @param property
-     */
-    public openRenamePropertyDialog(property: OasSchema): void {
-        let parent: OasSchema = <any>property.parent();
-        let propertyNames: string[] = parent.getProperties().map( prop => { return (<Oas20PropertySchema>prop).getPropertyName(); });
-        this.renamePropertyDialog.open(property, (<Oas20PropertySchema>property).getPropertyName(), newName => {
-            return propertyNames.indexOf(newName) !== -1;
-        });
+    public isObject(): boolean {
+        return this.definition.type == "object" || this.definition.type == null || this.definition.type == undefined;
+    }
+
+    public simpleType(): SimplifiedType {
+        if (this._stype === null) {
+            this._stype = SimplifiedType.fromSchema(this.definition);
+        }
+        return this._stype;
+    }
+
+    protected onDocumentChange(): void {
+        super.onDocumentChange();
+        this._stype = null;
+    }
+
+    public changeSimpleType(newType: SimplifiedType): void {
+        let nt: SimplifiedType = new SimplifiedType();
+        nt.type = newType.type;
+        nt.enum_ = newType.enum_;
+        nt.of = newType.of;
+        nt.as = newType.as;
+        let command: ICommand = CommandFactory.createChangeSchemaTypeCommand(this.definition, nt);
+        this.commandService.emit(command);
+    }
+
+    public inheritanceType(): string {
+        if (this.definition.allOf) {
+            return "allOf";
+        }
+        if (this.definition['anyOf']) {
+            return "anyOf";
+        }
+        if (this.definition['oneOf']) {
+            return "oneOf";
+        }
+
+        return "none";
+    }
+
+    public inheritanceTypeOptions(): DropDownOption[] {
+        if (this.definition.ownerDocument().getDocumentType() === DocumentType.openapi2) {
+            return INHERITANCE_TYPES_20;
+        }
+        return INHERITANCE_TYPES;
+    }
+
+    public isInheritanceEnabled(): boolean {
+        return this.inheritanceType() !== "none";
+    }
+
+    public setInheritanceType(newInheritanceType: string): void {
+        console.info("[DefinitionFormComponent] Setting inheritance type to: ", newInheritanceType);
+        let command: ICommand = CommandFactory.createChangeSchemaInheritanceCommand(this.definition, newInheritanceType);
+        this.commandService.emit(command);
     }
 
     /**
-     * Renames the property.
-     * @param event
+     * When the definition is an import, returns the content for the imported entity.
      */
-    public renameProperty(event: RenameEntityEvent): void {
-        let property: Oas20PropertySchema | Oas30PropertySchema = <any>event.entity;
-        let propertyName: string = property.getPropertyName();
-        let parent: OasSchema = <any>property.parent();
-        let command: ICommand = CommandFactory.createRenamePropertyCommand(parent, propertyName, event.newName);
-        this.commandService.emit(command);
+    referenceContent(): string {
+        if (this.definition.$ref && this.definition.$ref.indexOf("#") > 0) {
+            let hashIdx: number = this.definition.$ref.indexOf("#");
+            let resourceUrl: string = this.definition.$ref.substring(0, hashIdx);
+            let content: any = this.catalog.lookup(resourceUrl);
+            if (content) {
+                let fragment: string = this.definition.$ref.substring(hashIdx+1);
+                content = ReferenceUtil.resolveFragmentFromJS(content, fragment);
+                if (content) {
+                    return JSON.stringify(content, null, 3);
+                }
+            }
+        }
+        return "Content not available.";
+    }
+
+    refLink(): string {
+        if (this.definition.$ref && this.definition.$ref.startsWith("apicurio:")) {
+            let currentUrl: string = window.location.href;
+            let refId: string = this.getRefId();
+            // Drop the /editor and /12345 (apiId) from the URL
+            let prefix: string = currentUrl.substring(0, currentUrl.lastIndexOf('/'));
+            prefix = prefix.substring(0, prefix.lastIndexOf('/'));
+            return prefix + "/" + refId;
+        } else {
+            return this.definition.$ref;
+        }
+    }
+
+    private getRefId(): string {
+        let colonIdx: number = this.definition.$ref.indexOf(':');
+        let hashIdx: number = this.definition.$ref.indexOf('#');
+        return this.definition.$ref.substring(colonIdx + 1, hashIdx);
     }
 
 }

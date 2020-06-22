@@ -119,6 +119,11 @@ import {ResponseFormComponent} from "./pages/apis/{apiId}/editor/_components/for
 import {CloneResponseDefinitionDialogComponent} from "./pages/apis/{apiId}/editor/_components/dialogs/clone-response-definition.component";
 import {AsyncApiEditorComponent} from "./pages/apis/{apiId}/editor/aaieditor.component";
 import {GraphQLEditorComponent} from "./pages/apis/{apiId}/editor/graphql-editor.component";
+import {PropertiesSectionComponent} from "./pages/apis/{apiId}/editor/_components/forms/definition/properties-section.component";
+import {InheritanceSchemasSectionComponent} from "./pages/apis/{apiId}/editor/_components/forms/definition/schemas-section.component";
+import {SchemaRowComponent} from "./pages/apis/{apiId}/editor/_components/forms/definition/schema-row.component";
+import {AddSchemaDialogComponent} from "./pages/apis/{apiId}/editor/_components/dialogs/add-schema.component";
+import {ApiCatalogService} from "./pages/apis/{apiId}/editor/_services/api-catalog.service";
 
 @NgModule({
     imports: [
@@ -145,11 +150,12 @@ import {GraphQLEditorComponent} from "./pages/apis/{apiId}/editor/graphql-editor
         InlineExampleEditorComponent, DefinitionExampleSectionComponent, PropertyEditorComponent, HeaderParamRowComponent,
         HeaderParamsSectionComponent, OperationsSectionComponent, MediaTypeRowComponent, CollaboratorAggregateComponent,
         CollaboratorOverlayComponent, CookieParamsSectionComponent, CookieParamRowComponent, ResponseEditorComponent,
-        ResponseFormComponent, CloneResponseDefinitionDialogComponent, AsyncApiEditorComponent, GraphQLEditorComponent
+        ResponseFormComponent, CloneResponseDefinitionDialogComponent, AsyncApiEditorComponent, GraphQLEditorComponent,
+        PropertiesSectionComponent, InheritanceSchemasSectionComponent, SchemaRowComponent, AddSchemaDialogComponent
     ],
     providers: [
         ProblemsService, SelectionService, LicenseService, CommandService, DocumentService, EditorsService,
-        RestResourceService, FeaturesService, CollaboratorService
+        RestResourceService, FeaturesService, CollaboratorService, ApiCatalogService
     ],
     exports: [
         ApiEditorComponent, AsyncApiEditorComponent, GraphQLEditorComponent

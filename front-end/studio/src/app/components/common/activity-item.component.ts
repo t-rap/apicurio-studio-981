@@ -21,6 +21,7 @@ import { MockReference } from "../../models/mock-api.model";
 import {ICommand, MarshallCompat} from "apicurio-data-models";
 import {PublishApi} from "../../models/publish-api.model";
 import * as moment from "moment";
+import {componentTypeToString} from "../../pages/apis/{apiId}/editor/_models/component-type.model";
 
 
 @Component({
@@ -125,6 +126,7 @@ export class ActivityItemComponent {
             case "ChangePropertyTypeCommand_30":
             case "ChangeResponseTypeCommand":
             case "ChangeResponseTypeCommand_20":
+            case "ChangeSchemaTypeCommand":
             case "ChangeResponseDefinitionTypeCommand":
             case "ChangeResponseDefinitionTypeCommand_20":
                 rval = "info";
@@ -151,6 +153,7 @@ export class ActivityItemComponent {
                 rval = "pencil";
                 break;
             case "DeleteAllOperationsCommand":
+            case "DeleteAllParametersCommand":
             case "DeleteAllParametersCommand_20":
             case "DeleteAllParametersCommand_30":
             case "DeleteAllPropertiesCommand":
@@ -251,6 +254,9 @@ export class ActivityItemComponent {
             case "ReplaceSchemaDefinitionCommand":
             case "ReplaceSchemaDefinitionCommand_20":
             case "ReplaceSchemaDefinitionCommand_30":
+            case "ReplaceResponseDefinitionCommand":
+            case "ReplaceResponseDefinitionCommand_20":
+            case "ReplaceResponseDefinitionCommand_30":
             case "ReplaceDocumentCommand":
                 rval = "code";
                 break;
@@ -283,6 +289,11 @@ export class ActivityItemComponent {
             case "NewResponseWithRef":
                 rval = "reply-all";
                 break;
+            case "ImportedComponents":
+                rval = "plus";
+                break;
+            default:
+                console.warn("[ActivityItemComponent] Unhandled AggregateCommand change item (ICON): %s", name);
         }
         return rval;
     }
@@ -359,6 +370,9 @@ export class ActivityItemComponent {
             case "ChangePropertyTypeCommand_20":
             case "ChangePropertyTypeCommand_30":
                 rval = "changed the type of the Schema Property named '" + this.command()["_propName"] + "' at location " + this.command()["_propPath"] + ".";
+                break;
+            case "ChangeSchemaTypeCommand":
+                rval = "changed the type of the Schema at location " + this.command()["_schemaPath"] + ".";
                 break;
             case "ChangeResponseTypeCommand":
             case "ChangeResponseTypeCommand_20":
@@ -565,9 +579,9 @@ export class ActivityItemComponent {
             case "ReplaceSchemaDefinitionCommand_30":
                 rval = "fully replaced the source for Data Type '" + this.command()["_defName"] + "'.";
                 break;
-            case "ReplaceSchemaDefinitionCommand":
-            case "ReplaceSchemaDefinitionCommand_20":
-            case "ReplaceSchemaDefinitionCommand_30":
+            case "ReplaceResponseDefinitionCommand":
+            case "ReplaceResponseDefinitionCommand_20":
+            case "ReplaceResponseDefinitionCommand_30":
                 rval = "fully replaced the source for Data Type '" + this.command()["_defName"] + "'.";
                 break;
             case "ReplaceSecurityRequirementCommand":
@@ -638,8 +652,11 @@ export class ActivityItemComponent {
             case "NewResponseWithRef":
                 rval = `created a Response that references the Response Definition at '${ this.command()["info"].$ref }'.`;
                 break;
+            case "ImportedComponents":
+                rval = `imported ${ this.command()["info"].numComponents } external components of type '${ componentTypeToString(this.command()["info"].type) }'.`;
+                break;
             default:
-                console.info("[ActivityItemComponent] WARNING - unhandled AggregateCommand change item: %s", name);
+                console.warn("[ActivityItemComponent] Unhandled AggregateCommand change item: %s", name);
                 rval = "performed some unknown action...";
         }
         return rval;

@@ -73,6 +73,10 @@ import {ProfileEditorComponent} from "./pages/settings/validation/_components/pr
 import {TagListComponent} from "./components/common/tag-list.component";
 import {SharingDialogComponent} from "./pages/apis/{apiId}/_components/sharing.dialog";
 import {ApiTextEditorPageComponent} from "./pages/apis/{apiId}/editor/api-teditor.page";
+import {DownloadDialogComponent} from "./pages/apis/{apiId}/_components/download.dialog";
+import {ImportComponentsWizard} from "./pages/apis/{apiId}/_components/import-components.wizard";
+import {DataTableComponent} from "./components/common/data-table.component";
+import {LoadingComponent} from "./components/common/loading.component";
 
 @NgModule({
     imports: [
@@ -89,8 +93,8 @@ import {ApiTextEditorPageComponent} from "./pages/apis/{apiId}/editor/api-tedito
         PublishPageComponent, GitHubResourceComponent, GitLabResourceComponent, BitbucketResourceComponent,
         GenerateProjectWizardComponent, ActivityItemComponent, EditorDisconnectedDialogComponent, MockPageComponent,
         DefaultPageComponent, ConfigureValidationComponent, ProfileEditorComponent, TagListComponent,
-        SharingDialogComponent, ApiTextEditorPageComponent
-
+        SharingDialogComponent, ApiTextEditorPageComponent, DownloadDialogComponent, ImportComponentsWizard,
+        DataTableComponent, LoadingComponent
     ],
     providers: [
         ApisService, AuthenticationServiceProvider, ConfigService, LinkedAccountsService, ValidationService,

@@ -29,19 +29,26 @@ import {
 } from "@angular/core";
 import {ApiDefinition} from "../../../../models/api.model";
 import {
-    CombinedVisitorAdapter,
+    AggregateCommand,
+    CombinedVisitorAdapter, CommandFactory,
     DocumentType,
-    ICommand, IDefinition,
+    ICommand,
+    IDefinition,
+    IReferenceResolver,
     IValidationSeverityRegistry,
     Library,
+    ModelCloner,
     Node,
-    NodePath, Oas20ResponseDefinition,
-    Oas20SchemaDefinition, Oas30ResponseDefinition,
+    NodePath,
+    Oas20ResponseDefinition,
+    Oas20SchemaDefinition,
+    Oas30ResponseDefinition,
     Oas30SchemaDefinition,
     OasDocument,
-    OasPathItem,
+    OasPathItem, OasSchema,
     OtCommand,
     OtEngine,
+    ReferenceUtil,
     ValidationProblem
 } from "apicurio-data-models";
 import {EditorMasterComponent} from "./_components/master.component";
@@ -63,6 +70,9 @@ import {CollaboratorService} from "./_services/collaborator.service";
 import {ArrayUtils, TopicSubscription} from "apicurio-ts-core";
 import {ResponseEditorComponent} from "./_components/editors/response-editor.component";
 import {AbstractApiEditorComponent} from "./editor.base";
+import {ApiCatalogService} from "./_services/api-catalog.service";
+import {ComponentType} from "./_models/component-type.model";
+import {ImportedComponent} from "./_models/imported-component.model";
 
 
 @Component({
@@ -72,12 +82,15 @@ import {AbstractApiEditorComponent} from "./editor.base";
     styleUrls: ["editor.component.css"],
     encapsulation: ViewEncapsulation.None
 })
-export class ApiEditorComponent extends AbstractApiEditorComponent implements OnChanges, OnInit, OnDestroy, IEditorsProvider {
+export class ApiEditorComponent extends AbstractApiEditorComponent implements OnChanges, OnInit, OnDestroy,
+    IEditorsProvider, IReferenceResolver {
 
     @Input() api: ApiDefinition;
     @Input() embedded: boolean;
     @Input() features: ApiEditorComponentFeatures;
     @Input() validationRegistry: IValidationSeverityRegistry;
+    @Input() contentFetcher: (externalReference: string) => Promise<any>;
+    @Input() componentImporter: (componentType: ComponentType) => Promise<ImportedComponent[]>;
 
     @Output() onCommandExecuted: EventEmitter<OtCommand> = new EventEmitter<OtCommand>();
     @Output() onSelectionChanged: EventEmitter<string> = new EventEmitter<string>();
@@ -100,6 +113,7 @@ export class ApiEditorComponent extends AbstractApiEditorComponent implements On
 
     private _selectionSubscription: TopicSubscription<string>;
     private _commandSubscription: TopicSubscription<ICommand>;
+    private _catalogSubscription: TopicSubscription<any>;
 
     @ViewChild("master") master: EditorMasterComponent;
     @ViewChild("serverEditor") serverEditor: ServerEditorComponent;
@@ -120,10 +134,24 @@ export class ApiEditorComponent extends AbstractApiEditorComponent implements On
      * @param editorsService
      * @param featuresService
      * @param collaboratorService
+     * @param catalog
      */
     constructor(private selectionService: SelectionService, private commandService: CommandService,
                 private documentService: DocumentService, private editorsService: EditorsService,
-                private featuresService: FeaturesService, private collaboratorService: CollaboratorService) { super(); }
+                private featuresService: FeaturesService, private collaboratorService: CollaboratorService,
+                private catalog: ApiCatalogService) {
+        super();
+
+        Library.addReferenceResolver(this);
+        console.debug("[ApiEditorComponent] Subscribing to API Catalog changes.");
+        this._catalogSubscription = this.catalog.changes().subscribe( () => {
+            console.debug("[ApiEditorComponent] Re-validating model due to API Catalog change.");
+            // Re-validate whenever the contents of the API catalog change
+            this.validateModel();
+            // Make sure any validation widgets refresh themselves
+            this.documentService.emitChange();
+        });
+    }
 
     /**
      * Called when the editor is initialized by angular.
@@ -142,12 +170,6 @@ export class ApiEditorComponent extends AbstractApiEditorComponent implements On
                 me.onCommand(command);
             }
         });
-
-        // TODO why was this here??
-        // // If we're in embedded mode, select the root now.
-        // if (this.embedded && this.api) {
-        //     this.documentService.emitDocument(this.document());
-        // }
     }
 
     /**
@@ -156,6 +178,8 @@ export class ApiEditorComponent extends AbstractApiEditorComponent implements On
     public ngOnDestroy(): void {
         this._selectionSubscription.unsubscribe();
         this._commandSubscription.unsubscribe();
+        this._catalogSubscription.unsubscribe();
+        Library.removeReferenceResolver(this);
     }
 
     /**
@@ -163,6 +187,10 @@ export class ApiEditorComponent extends AbstractApiEditorComponent implements On
      * @param changes
      */
     ngOnChanges(changes: SimpleChanges): void {
+        if (changes["contentFetcher"]) {
+            this.catalog.setFetcher(this.contentFetcher);
+        }
+
         if (changes["api"]) {
             this.selectionService.reset();
             this.collaboratorService.reset();
@@ -183,6 +211,8 @@ export class ApiEditorComponent extends AbstractApiEditorComponent implements On
             // Fire an event in the doc service indicating that there is a new document.
             this.documentService.setDocument(this.document());
             this.selectionService.selectRoot();
+
+            this.catalog.reset(this.document());
         }
 
         if (changes["features"]) {
@@ -497,6 +527,9 @@ export class ApiEditorComponent extends AbstractApiEditorComponent implements On
         // Update the form being displayed (this might change if the thing currently selected was deleted)
         this.updateFormDisplay(this.selectionService.currentSelection());
 
+        // Potentially update the API catalog
+        this.catalog.update(this.documentService.currentDocument());
+
         // Fire a change event in the document service
         this.documentService.emitChange();
     }
@@ -531,6 +564,45 @@ export class ApiEditorComponent extends AbstractApiEditorComponent implements On
         }
     }
 
+    /**
+     * Resolves a $ref reference from a Document.  Uses the API catalog to resolve the external
+     * content and, if found, selects the appropriate
+     * @param reference
+     * @param from
+     */
+    public resolveRef(reference: string, from: Node): Node {
+        // Don't try to resolve internal refs, only external ones.
+        if (reference && !reference.startsWith("#")) {
+            console.info("[ApiEditorComponent] Resolving a reference: ", reference);
+            let hashIdx: number = reference.indexOf("#");
+            if (hashIdx == -1) {
+                return null;
+            }
+            let resourceUrl: string = reference.substring(0, hashIdx);
+            console.debug("[ApiEditorComponent] Resource URL: ", resourceUrl);
+            let resourceContent: any = this.catalog.lookup(resourceUrl);
+            if (!resourceContent) {
+                // Content not available in API catalog.  Return null.
+                return null;
+            }
+            console.debug("[ApiEditorComponent] FOUND some content for URL: ", resourceUrl);
+            let fragment: string = reference.substr(hashIdx + 1);
+            console.debug("[ApiEditorComponent] Fragment: ", fragment);
+            let cnode: any = ReferenceUtil.resolveFragmentFromJS(resourceContent, fragment);
+
+            // If we resolved a js object (not null) then convert it to a data model (Node)
+            if (cnode) {
+                console.debug("[ApiEditorComponent] Found a cnode (cloning): ", cnode);
+                let emptyClone: any = ModelCloner.createEmptyClone(from);
+                return Library.readNode(cnode, emptyClone);
+            } else {
+                console.warn("[ApiEditorComponent] No node found at fragment.");
+                return null;
+            }
+        }
+        return null;
+    }
+
     public getServerEditor(): ServerEditorComponent {
         return this.serverEditor;
     }
@@ -559,6 +631,39 @@ export class ApiEditorComponent extends AbstractApiEditorComponent implements On
         return this.propertyEditor;
     }
 
+    importComponent(type: ComponentType) {
+        if (this.componentImporter) {
+            this.componentImporter(type).then(imports => {
+                let commands: ICommand[] = [];
+
+                imports.forEach(imp => {
+                    console.info("[ApiEditorComponent] Importing component: ", imp.name);
+                    // TODO check for name collisions
+                    let name: string = imp.name;
+                    let fromRef: any = {$ref: imp.$ref};
+                    if (imp.type === ComponentType.schema) {
+                        commands.push(CommandFactory.createAddSchemaDefinitionCommand(this.document().getDocumentType(), name, fromRef));
+                    } else if (type === ComponentType.response) {
+                        commands.push(CommandFactory.createAddResponseDefinitionCommand(this.document().getDocumentType(), name, fromRef));
+                    }
+                });
+
+                if (commands != null && commands.length == 1) {
+                    console.info("[ApiEditorComponent] Importing a single component.");
+                    this.commandService.emit(commands[0]);
+                } else if (commands != null && commands.length > 1) {
+                    console.info("[ApiEditorComponent] Importing multiple components. :: ", commands.length);
+                    let aggregateInfo: any = {
+                        type: type,
+                        numComponents: commands.length
+                    };
+                    this.commandService.emit(CommandFactory.createAggregateCommand("ImportedComponents", aggregateInfo, commands));
+                }
+            }).catch(error => {
+                // FIXME what to do if we get an error???
+            });
+        }
+    }
 }
 
 

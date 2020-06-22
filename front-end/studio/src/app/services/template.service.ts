@@ -66,7 +66,7 @@ export class TemplateService {
      * @param type
      */
     public getTemplates(type: string): ApiDesignTemplate[] {
-        let rval: ApiDesignTemplate[] = [];
+		let rval: ApiDesignTemplate[] = [];
         this.templates.forEach( template => {
             if (type === template.type) {
                 rval.push(template);

@@ -5,7 +5,7 @@
     <parent>
         <groupId>io.apicurio</groupId>
         <artifactId>apicurio-studio-be</artifactId>
-        <version>0.2.44-SNAPSHOT</version>
+        <version>0.2.47-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <artifactId>apicurio-studio-be-hub-api</artifactId>
@@ -125,6 +125,17 @@
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.smallrye</groupId>
+            <artifactId>smallrye-jwt</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>javax.annotation</groupId>
+                    <artifactId>javax.annotation-api</artifactId>
+                </exclusion>
+            </exclusions>
             <scope>provided</scope>
         </dependency>
 
