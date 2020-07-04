@@ -35,7 +35,7 @@ spec:
 kind: Ingress
 apiVersion: extensions/v1beta1
 metadata:
-  name: apicurio-studio-ui
+  name: apicurio-studio-ws
   annotations:
   labels:
     module: apicurio-studio-ws
@@ -47,11 +47,3 @@ spec:
       - backend:
           serviceName: "apicurio-studio-ws"
           servicePort: 8092
-        path: /ws
-  - host: localhost
-    http:
-      paths:
-      - backend:
-         serviceName: "apicurio-studio-ws"
-          servicePort: 8092
-        path: /designs
